@@ -1,0 +1,44 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DB_USER=root
+      - DB_PASSWORD=mysql_password
+      - DB_NAME=test_db
+      - DB_HOST=mysql
+      - CLICKHOUSE_URL=http://clickhouse:8123
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - mysql
+      - clickhouse
+    command: npm run dev
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=mysql_password
+      - MYSQL_DATABASE=test_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+volumes:
+  mysql_data:
+  clickhouse_data:

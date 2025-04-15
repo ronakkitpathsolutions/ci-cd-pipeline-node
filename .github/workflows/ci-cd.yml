@@ -1,0 +1,97 @@
+# .github/workflows/ci-cd.yml
+name: Node.js Test Project CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test_db
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      
+      clickhouse:
+        image: clickhouse/clickhouse-server:latest
+        ports:
+          - 8123:8123
+        options: --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js 16.x
+      uses: actions/setup-node@v3
+      with:
+        node-version: 16.x
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run tests
+      run: npm test || echo "No tests configured"
+      env:
+        DB_USER: root
+        DB_PASSWORD: root
+        DB_NAME: test_db
+        DB_HOST: localhost
+        CLICKHOUSE_URL: http://localhost:8123
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16.x'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Create deployment package
+      run: |
+        mkdir -p deployment
+        cp -r config models index.js package*.json deployment/
+        cd deployment && npm ci --production
+        cd .. && tar -czf deployment.tar.gz deployment
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: deployment-package
+        path: deployment.tar.gz
+
+  # For a test project, we might only want to verify the build process works
+  # without actually deploying to any servers
+  # Uncomment the below for actual deployment
+
+  # deploy-test:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+  #   
+  #   steps:
+  #   - name: Download artifact
+  #     uses: actions/download-artifact@v3
+  #     with:
+  #       name: deployment-package
+  #   
+  #   - name: Print success message
+  #     run: echo "Package would be deployed to test server in a real scenario"
